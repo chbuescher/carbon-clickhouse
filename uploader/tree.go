@@ -38,6 +38,7 @@ func (u *Tree) parseFile(filename string, out io.Writer) (uint64, map[string]boo
 	defer reader.Close()
 
 	version := uint32(time.Now().Unix())
+	version = version - (version % 60)
 
 	var days uint16
 	if !u.config.TreeDate.IsZero() {

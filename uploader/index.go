@@ -41,6 +41,7 @@ func (u *Index) parseFile(filename string, out io.Writer) (uint64, map[string]bo
 	defer reader.Close()
 
 	version := uint32(time.Now().Unix())
+	version = version - (version % 60)
 	newSeries := make(map[string]bool)
 	newUniq := make(map[string]bool)
 	wb := RowBinary.GetWriteBuffer()

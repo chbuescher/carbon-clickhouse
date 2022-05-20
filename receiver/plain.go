@@ -131,7 +131,8 @@ MainLoop:
 		}
 
 		// write result to buffer for clickhouse
-		wb.WriteGraphitePoint(name, value, timestamp, b.Time)
+		version := uint32(int64(0x80000000) + int64(b.Time) - int64(timestamp))
+		wb.WriteGraphitePoint(name, value, timestamp, version - (version % 60))
 		metricCount++
 	}
 

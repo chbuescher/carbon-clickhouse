@@ -62,6 +62,7 @@ func (u *Tagged) parseName(name string, days uint16,
 	}
 
 	version := uint32(time.Now().Unix())
+	version = version - (version % 60)
 
 	wb.Reset()
 	tagsBuf.Reset()
