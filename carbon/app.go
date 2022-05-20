@@ -60,9 +60,12 @@ func (app *App) configure() error {
 	} else {
 		cfg.Common.MetricPrefix = strings.Replace(cfg.Common.MetricPrefix, "{host}", "localhost", -1)
 	}
+	cfg.Common.MetricPrefix = os.ExpandEnv(cfg.Common.MetricPrefix)
 
 	if cfg.Common.MetricEndpoint == "" {
 		cfg.Common.MetricEndpoint = MetricEndpointLocal
+	} else {
+		cfg.Common.MetricEndpoint = os.ExpandEnv(cfg.Common.MetricEndpoint)
 	}
 
 	if cfg.Common.MetricEndpoint != MetricEndpointLocal {

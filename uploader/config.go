@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/lomik/carbon-clickhouse/helper/config"
@@ -34,6 +35,7 @@ func (cfg *Config) Parse() error {
 			return err
 		}
 	}
+	cfg.URL = os.ExpandEnv(cfg.URL)
 
 	var known bool
 	cfg.hashFunc, known = knownHash[cfg.Hash]
