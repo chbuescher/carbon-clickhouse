@@ -97,11 +97,7 @@ func New(dsn string, config tags.TagConfig, opts ...Option) (Receiver, error) {
 		return nil, err
 	}
 
-	base := NewBase(zapwriter.Logger(strings.Replace(u.Scheme, "+", "_", -1)), config)
-
-	for _, optApply := range opts {
-		optApply(&base)
-	}
+	logger := zapwriter.Logger(strings.Replace(u.Scheme, "+", "_", -1))
 
 	if u.Scheme == "tcp" {
 		addr, err := net.ResolveTCPAddr("tcp", u.Host)
@@ -110,96 +106,88 @@ func New(dsn string, config tags.TagConfig, opts ...Option) (Receiver, error) {
 		}
 
 		r := &TCP{
-			Base:      base,
 			parseChan: make(chan *Buffer),
 		}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err
 		}
 
 		return r, err
-	}
 
-	if u.Scheme == "pickle" {
+	} else if u.Scheme == "pickle" {
 		addr, err := net.ResolveTCPAddr("tcp", u.Host)
 		if err != nil {
 			return nil, err
 		}
 
 		r := &Pickle{
-			Base:      base,
 			parseChan: make(chan []byte),
 		}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err
 		}
 
 		return r, err
-	}
 
-	if u.Scheme == "udp" {
+	} else if u.Scheme == "udp" {
 		addr, err := net.ResolveUDPAddr("udp", u.Host)
 		if err != nil {
 			return nil, err
 		}
 
 		r := &UDP{
-			Base:      base,
 			parseChan: make(chan *Buffer),
 		}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err
 		}
 
 		return r, err
-	}
 
-	if u.Scheme == "grpc" {
+	} else if u.Scheme == "grpc" {
 		addr, err := net.ResolveTCPAddr("tcp", u.Host)
 		if err != nil {
 			return nil, err
 		}
 
-		r := &GRPC{
-			Base: base,
-		}
+		r := &GRPC{}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err
 		}
 
 		return r, err
-	}
 
-	if u.Scheme == "prometheus" {
+	} else if u.Scheme == "prometheus" {
 		addr, err := net.ResolveTCPAddr("tcp", u.Host)
 		if err != nil {
 			return nil, err
 		}
 
-		r := &PrometheusRemoteWrite{
-			Base: base,
-		}
+		r := &PrometheusRemoteWrite{}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err
 		}
 
 		return r, err
-	}
 
-	if u.Scheme == "telegraf+http+json" {
+	} else if u.Scheme == "telegraf+http+json" {
 		addr, err := net.ResolveTCPAddr("tcp", u.Host)
 		if err != nil {
 			return nil, err
 		}
 
-		r := &TelegrafHttpJson{
-			Base: base,
-		}
+		r := &TelegrafHttpJson{}
+		r.Init(logger, config, opts...)
 
 		if err = r.Listen(addr); err != nil {
 			return nil, err

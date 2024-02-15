@@ -14,6 +14,9 @@ Last releases are stable and ready for production use
 Docker images are available on [packages](https://github.com/lomik/carbon-clickhouse/pkgs/container/carbon-clickhouse) page.
 
 ## Build
+
+Required golang 1.18+
+
 ```sh
 # build binary
 git clone https://github.com/lomik/carbon-clickhouse.git
@@ -28,11 +31,11 @@ make
 2. Create tables.
 
 ```sql
-CREATE TABLE graphite ( 
-  Path String,  
-  Value Float64,  
-  Time UInt32,  
-  Date Date,  
+CREATE TABLE graphite (
+  Path String,
+  Value Float64,
+  Time UInt32,
+  Date Date,
   Timestamp UInt32
 ) ENGINE = GraphiteMergeTree('graphite_rollup')
 PARTITION BY toYYYYMM(Date)
@@ -73,6 +76,11 @@ Usage of carbon-clickhouse:
   -config-print-default=false: Print default config
   -version=false: Print version
 ```
+
+Date are broken by default (not always in UTC), but this used from start of project, and can produce some bugs.  
+Change to UTC requires points/index/tags tables rebuild (Date recalc to true UTC) or queries with wide Date range.  
+Set `data.utc-date = true` for this.  
+Without UTC date is required to run carbon-clickhouse and graphite-clickhouse in one timezone.
 
 ```toml
 [common]
@@ -115,6 +123,9 @@ compression = "none"
 # For "lz4" 0 means use normal LZ4, >=1 use LZ4HC with this depth (the higher - the better compression, but slower)
 compression-level = 0
 
+# Date are broken by default (not always in UTC)
+#utc-date = false
+
 [upload.graphite]
 type = "points"
 table = "graphite"
@@ -124,7 +135,7 @@ url = "http://localhost:8123/"
 compress-data = true
 timeout = "1m0s"
 # save zero value to Timestamp column (for point and posts-reverse tables)
-zero-timestamp = false 
+zero-timestamp = false
 
 [upload.graphite_index]
 type = "index"
@@ -170,6 +181,23 @@ disable-daily-index = false
 #     "a.b.c.d",  # all tags (but __name__) will be ignored for metrics like a.b.c.d?tagName1=tagValue1&tagName2=tagValue2...
 #     "*",  # all tags (but __name__) will be ignored for all metrics; this is the only special case with wildcards
 # ]
+#
+# It is possible to connect to clickhouse with OpenSSL certificates (mTLS) like below:
+# [upload.graphite]
+# type = "points"
+# table = "graphite"
+# threads = 1
+# compress-data = true
+# zero-timestamp = false
+# timeout = "1m0s"
+# url = "https://localhost:8443/" # url is https
+# [upload.graphite.tls]
+# ca-cert = [ "<path/to/rootCA.crt>", "<path/to/other/rootCA.crt>" ]
+# server-name = "<server-name>"
+# insecure-skip-verify = false # if true, server certificates will not be validated
+# [[upload.graphite.tls.certificates]]
+# key = "<path/to/client.key>"
+# cert = "<path/to/client.crt>"
 
 [udp]
 listen = ":2003"
@@ -228,7 +256,7 @@ concat = "."
 # /debug/receive/grpc/dropped/
 # /debug/receive/prometheus/dropped/
 # /debug/receive/telegraf_http_json/dropped/
-[pprof] 
+[pprof]
 listen = "localhost:7007"
 enabled = false
 

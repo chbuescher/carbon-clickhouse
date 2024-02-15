@@ -28,23 +28,23 @@ type Base struct {
 		pastDropped        uint64 // atomic
 		tooLongDropped     uint64 // atomic
 	}
-	droppedList       [droppedListSize]string
-	droppedListNext   int
-	droppedListMu     sync.Mutex
-	parseThreads      int
-	dropFutureSeconds uint32
-	dropPastSeconds   uint32
-	dropTooLongLimit  uint16
+	droppedList        [droppedListSize]string
+	droppedListNext    int
+	droppedListMu      sync.Mutex
+	parseThreads       int
+	dropFutureSeconds  uint32
+	dropPastSeconds    uint32
+	dropTooLongLimit   uint16
 	readTimeoutSeconds uint32
-	writeChan         chan *RowBinary.WriteBuffer
-	logger            *zap.Logger
-	Tags              tags.TagConfig
-	concatCharacter   string
+	writeChan          chan *RowBinary.WriteBuffer
+	logger             *zap.Logger
+	Tags               tags.TagConfig
+	concatCharacter    string
 }
 
-func NewBase(logger *zap.Logger, config tags.TagConfig) Base {
-	return Base{logger: logger, Tags: config}
-}
+// func NewBase(logger *zap.Logger, config tags.TagConfig) Base {
+// 	return Base{logger: logger, Tags: config}
+// }
 
 func sendUint64Counter(send func(metric string, value float64), metric string, value *uint64) {
 	v := atomic.LoadUint64(value)
@@ -54,6 +54,15 @@ func sendUint64Counter(send func(metric string, value float64), metric string, v
 
 func sendInt64Gauge(send func(metric string, value float64), metric string, value *int64) {
 	send(metric, float64(atomic.LoadInt64(value)))
+}
+
+func (base *Base) Init(logger *zap.Logger, config tags.TagConfig, opts ...Option) {
+	base.logger = logger
+	base.Tags = config
+
+	for _, optApply := range opts {
+		optApply(base)
+	}
 }
 
 func (base *Base) isDrop(nowTime uint32, metricTime uint32) bool {
@@ -110,10 +119,10 @@ func (base *Base) isDropString(name string, nowTime uint32, metricTime uint32, v
 }
 
 func (base *Base) isDropBytes(name []byte, nowTime uint32, metricTime uint32, value float64) bool {
-	if !base.isDrop(nowTime, metricTime) && !base.isDropMetricNameTooLong(string(name)) {
+	if !base.isDrop(nowTime, metricTime) && !base.isDropMetricNameTooLong(unsafeString(name)) {
 		return false
 	}
-	base.saveDropped(string(name), nowTime, metricTime, value)
+	base.saveDropped(unsafeString(name), nowTime, metricTime, value)
 	return true
 }
 

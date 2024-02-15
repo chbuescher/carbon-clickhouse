@@ -16,8 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lomik/carbon-clickhouse/helper/stop"
 	"go.uber.org/zap"
+
+	"github.com/lomik/carbon-clickhouse/helper/stop"
 )
 
 type Base struct {
@@ -35,6 +36,7 @@ type Base struct {
 	stat struct {
 		uploaded        uint32
 		uploadedMetrics uint64
+		uploadTime      uint64
 		errors          uint32
 		delay           int64
 		unhandled       uint32 // @TODO: maxUnhandled
@@ -47,6 +49,9 @@ func (u *Base) Stat(send func(metric string, value float64)) {
 
 	uploadedMetrics := atomic.SwapUint64(&u.stat.uploadedMetrics, 0)
 	send("uploaded_metrics", float64(uploadedMetrics))
+
+	uploadTime := atomic.SwapUint64(&u.stat.uploadTime, 0)
+	send("upload_time", float64(uploadTime))
 
 	errors := atomic.SwapUint32(&u.stat.errors, 0)
 	send("errors", float64(errors))
@@ -88,15 +93,17 @@ func (u *Base) scanDir(ctx context.Context) {
 		files = append(files, fileName)
 	}
 
-	if delay > 0 {
+	if delay >= 0 {
 		atomic.StoreInt64(&u.stat.delay, delay)
 	}
-	atomic.StoreUint32(&u.stat.unhandled, uint32(len(files)))
+	n := uint32(len(files))
+	atomic.StoreUint32(&u.stat.unhandled, n)
 
 	if len(files) == 0 {
 		return
 	}
 
+	// TODO (msaf1980): maybe load newest files first ?
 	sort.Strings(files)
 
 	for _, fn := range files {
@@ -111,6 +118,8 @@ func (u *Base) scanDir(ctx context.Context) {
 
 		select {
 		case u.queue <- fn:
+			n--
+			atomic.StoreUint32(&u.stat.unhandled, n)
 			// pass
 		case <-ctx.Done():
 			return
@@ -175,12 +184,15 @@ func (u *Base) uploadWorker(ctx context.Context) {
 
 			n, err := u.handler(ctx, logger, filename)
 
+			duration := time.Since(startTime)
+			atomic.AddUint64(&u.stat.uploadTime, uint64(duration.Milliseconds()))
+
 			if err != nil {
 				atomic.AddUint32(&u.stat.errors, 1)
 				logger.Error("handle failed",
 					zap.Uint64("metrics", n),
 					zap.Error(err),
-					zap.Duration("time", time.Since(startTime)),
+					zap.Duration("time", duration),
 				)
 
 				time.Sleep(time.Second)
@@ -189,7 +201,7 @@ func (u *Base) uploadWorker(ctx context.Context) {
 				atomic.AddUint64(&u.stat.uploadedMetrics, n)
 				logger.Info("handle success",
 					zap.Uint64("metrics", n),
-					zap.Duration("time", time.Since(startTime)),
+					zap.Duration("time", duration),
 				)
 			}
 
@@ -201,20 +213,33 @@ func (u *Base) uploadWorker(ctx context.Context) {
 	}
 }
 
-func compress(data io.Reader) io.Reader {
+func compress(data *io.PipeReader) io.Reader {
 	pr, pw := io.Pipe()
 	gw := gzip.NewWriter(pw)
 
 	go func() {
-		_, _ = io.Copy(gw, data)
-		gw.Close()
+		_, err := io.Copy(gw, data)
+		if err != nil {
+			pw.CloseWithError(err)
+			data.CloseWithError(err)
+			return
+		}
+
+		err = gw.Close()
+		if err != nil {
+			pw.CloseWithError(err)
+			data.CloseWithError(err)
+			return
+		}
+
 		pw.Close()
+		data.Close()
 	}()
 
 	return pr
 }
 
-func (u *Base) insertRowBinary(table string, data io.Reader) error {
+func (u *Base) insertRowBinary(table string, data *io.PipeReader) error {
 	p, err := url.Parse(u.config.URL)
 	if err != nil {
 		return err
@@ -224,32 +249,31 @@ func (u *Base) insertRowBinary(table string, data io.Reader) error {
 
 	q.Set("query", fmt.Sprintf("INSERT INTO %s FORMAT RowBinary", table))
 	p.RawQuery = q.Encode()
-	queryUrl := p.String()
+	queryURL := p.String()
 
 	var req *http.Request
 
 	if u.config.CompressData {
-		req, err = http.NewRequest("POST", queryUrl, compress(data))
+		req, err = http.NewRequest("POST", queryURL, compress(data))
 		req.Header.Add("Content-Encoding", "gzip")
 	} else {
-		req, err = http.NewRequest("POST", queryUrl, data)
+		req, err = http.NewRequest("POST", queryURL, data)
 	}
 
 	if err != nil {
 		return err
 	}
-
-	client := &http.Client{
-		Timeout:   u.config.Timeout.Value(),
-		Transport: &http.Transport{DisableKeepAlives: true},
-	}
-	resp, err := client.Do(req)
+	resp, err := u.config.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
 	body, _ := ioutil.ReadAll(resp.Body)
+
+	if exceptionCode := resp.Header.Get("X-Clickhouse-Exception-Code"); exceptionCode != "" && exceptionCode != "0" {
+		return fmt.Errorf("clickhouse exception code %s, response status %d: %s", exceptionCode, resp.StatusCode, string(body))
+	}
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("clickhouse response status %d: %s", resp.StatusCode, string(body))

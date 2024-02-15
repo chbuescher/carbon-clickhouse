@@ -161,7 +161,7 @@ func (w *Writer) worker(ctx context.Context) {
 					return
 				}
 			} else {
-				chunkInterval = time.Now().Sub(start)
+				chunkInterval = time.Since(start)
 			}
 
 			outBuf.Flush()
